@@ -42,3 +42,4 @@ QuickSSRF est un plugin conçu pour s'intégrer avec [CAIDO](https://caido.io/) 
 - **Intégration transparente** : Fonctionne directement avec CAIDO pour des flux de travail optimisés.
 
 ---
+![img.png](https://raw.githubusercontent.com/caido-community/quickssrf/main/img.png)
