@@ -1,93 +1,102 @@
-import * as CryptoJS from 'crypto-js';
+// CryptoService.ts
 
 export class CryptoService {
-    private privateKey: string | null = null;
-    private publicKey: string | null = null;
+    private privateKey: CryptoKey | null = null;
+    private publicKey: CryptoKey | null = null;
     private isInitialized: boolean = false;
 
     constructor() {
-        this.generateKeys();
-        this.isInitialized = true;
+        // Initialize is now an asynchronous method
     }
 
-    private generateKeys(): void {
-        try {
-            // Based on the Interactsh client reference implementation
-            this.publicKey = [
-                "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1SU1LfVLPHCozMxH2Mo",
-                "4lgOEePzNm0tRgeLezV6ffAt0gunVTLw7onLRnrq0/IzW7yWR7QkrmBL7jTKEn5u",
-                "+qKhbwKfBstIs+bMY2Zkp18gnTxKLxoS2tFczGkPLPgizskuemMghRniWaoLcyeh",
-                "kd3qqGElvW/VDL5AaWTg0nLVkjRo9z+40RQzuVaE8AkAFmxZzow3x+VJYKdjykkJ",
-                "0iT9wCS0DRTXu269V264Vf/3jvredZiKRkgwlL9xNAwxXFg0x/XFw005UWVRIkdg",
-                "cKWTjpBP2dPwVZ4WWC+9aGVd+Gyn1o0CLelf4rEjGoXbAAEgAqeGUxrcIlbjXfbc",
-                "mwIDAQAB"
-            ].join('');
+    /**
+     * Initialize the cryptographic keys.
+     */
+    public async initialize(): Promise<void> {
+        await this.generateKeys();
+        this.isInitialized = true;
+        console.log('Keys initialized successfully');
+    }
 
-            const keyBytes = CryptoJS.lib.WordArray.random(32);
-            this.privateKey = keyBytes.toString(CryptoJS.enc.Base64);
-            console.log('Keys initialized successfully');
+    /**
+     * Generate RSA key pair using the Web Crypto API.
+     */
+    private async generateKeys(): Promise<void> {
+        try {
+            const keyPair = await window.crypto.subtle.generateKey(
+                {
+                    name: 'RSA-OAEP',
+                    modulusLength: 2048,
+                    publicExponent: new Uint8Array([1, 0, 1]),
+                    hash: 'SHA-256',
+                },
+                true,
+                ['encrypt', 'decrypt']
+            );
+
+            this.publicKey = keyPair.publicKey;
+            this.privateKey = keyPair.privateKey;
         } catch (error) {
             console.error('Error generating keys:', error);
             throw error;
         }
     }
 
+    /**
+     * Encode the public key in PEM format with proper line breaks.
+     */
     public async encodePublicKey(): Promise<string> {
         try {
             if (!this.publicKey) {
                 throw new Error('Public key not initialized');
             }
-            // Return formatted exactly as Interactsh expects
-            return `-----BEGIN PUBLIC KEY-----\n${this.publicKey}\n-----END PUBLIC KEY-----`;
+
+            const exported = await window.crypto.subtle.exportKey('spki', this.publicKey);
+            const exportedAsBase64 = this.arrayBufferToBase64(exported);
+            const formattedKey = this.formatPem(exportedAsBase64, 'PUBLIC KEY');
+
+            return formattedKey;
         } catch (error) {
             console.error('Error encoding public key:', error);
             throw error;
         }
     }
 
-    public async decryptMessage(key: string, secureMessage: string): Promise<string> {
-        try {
-            if (!this.privateKey) {
-                throw new Error('Private key not initialized');
-            }
-
-            const secureMessageWords = CryptoJS.enc.Base64.parse(secureMessage);
-            const decryptionKey = CryptoJS.enc.Base64.parse(key);
-
-            // Extract IV (first 16 bytes)
-            const ivWords = CryptoJS.lib.WordArray.create(
-                secureMessageWords.words.slice(0, 4),
-                16
-            );
-
-            // Rest is ciphertext
-            const ciphertextWords = CryptoJS.lib.WordArray.create(
-                secureMessageWords.words.slice(4),
-                secureMessageWords.sigBytes - 16
-            );
-
-            const decrypted = CryptoJS.AES.decrypt(
-                { ciphertext: ciphertextWords },
-                decryptionKey,
-                {
-                    iv: ivWords,
-                    mode: CryptoJS.mode.CFB,
-                    padding: CryptoJS.pad.NoPadding
-                }
-            );
-
-            return decrypted.toString(CryptoJS.enc.Utf8);
-        } catch (error) {
-            console.error('Error decrypting message:', error);
-            throw error;
+    /**
+     * Convert an ArrayBuffer to a Base64-encoded string.
+     */
+    private arrayBufferToBase64(buffer: ArrayBuffer): string {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
         }
+        return window.btoa(binary);
     }
 
-    public getPrivateKey(): string | null {
+    /**
+     * Format a Base64-encoded string into PEM format.
+     */
+    private formatPem(base64Key: string, label: string): string {
+        const lineLength = 64;
+        const regex = new RegExp(`.{1,${lineLength}}`, 'g');
+        const lines = base64Key.match(regex) || [];
+        const formattedKey = `-----BEGIN ${label}-----\n${lines.join('\n')}\n-----END ${label}-----`;
+        return formattedKey;
+    }
+
+    // Placeholder for the decryptMessage method
+    public async decryptMessage(key: string, secureMessage: string): Promise<string> {
+        // Implement decryption logic here
+        return '';
+    }
+
+    public getPrivateKey(): CryptoKey | null {
         return this.privateKey;
     }
 
-    public getPublicKey(): string | null {
+    public getPublicKey(): CryptoKey | null {
         return this.publicKey;
     }
 }
