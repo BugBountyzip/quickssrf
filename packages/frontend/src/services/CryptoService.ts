@@ -12,10 +12,19 @@ export class CryptoService {
 
     private generateKeys(): void {
         try {
+            
+            this.publicKey = 
+                "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1SU1LfVLPHCozMxH2Mo" +
+                "4lgOEePzNm0tRgeLezV6ffAt0gunVTLw7onLRnrq0/IzW7yWR7QkrmBL7jTKEn5u" +
+                "+qKhbwKfBstIs+bMY2Zkp18gnTxKLxoS2tFczGkPLPgizskuemMghRniWaoLcyeh" +
+                "kd3qqGElvW/VDL5AaWTg0nLVkjRo9z+40RQzuVaE8AkAFmxZzow3x+VJYKdjykkJ" +
+                "0iT9wCS0DRTXu269V264Vf/3jvredZiKRkgwlL9xNAwxXFg0x/XFw005UWVRIkdg" +
+                "cKWTjpBP2dPwVZ4WWC+9aGVd+Gyn1o0CLelf4rEjGoXbAAEgAqeGUxrcIlbjXfbcmwIDAQAB";
+
             const keyBytes = CryptoJS.lib.WordArray.random(32);
             this.privateKey = keyBytes.toString(CryptoJS.enc.Base64);
-            this.publicKey = keyBytes.toString(CryptoJS.enc.Base64);
-            console.log('Keys generated successfully');
+
+            console.log('Keys initialized successfully');
         } catch (error) {
             console.error('Error generating keys:', error);
             throw error;
@@ -37,16 +46,8 @@ export class CryptoService {
                 throw new Error('Public key not initialized');
             }
 
-            // Format the key in proper PEM format
-            // Split the base64 into 64-character lines
-            const base64Lines = this.publicKey.match(/.{1,64}/g) || [];
-            const pemKey = [
-                '-----BEGIN PUBLIC KEY-----',
-                ...base64Lines,
-                '-----END PUBLIC KEY-----'
-            ].join('\n');
-
-            return pemKey;
+            // Return the key in proper PEM format
+            return `-----BEGIN PUBLIC KEY-----\n${this.publicKey}\n-----END PUBLIC KEY-----`;
         } catch (error) {
             console.error('Error encoding public key:', error);
             throw error;
