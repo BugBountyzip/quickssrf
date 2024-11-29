@@ -12,12 +12,12 @@ export class CryptoService {
 
     private generateKeys(): void {
         try {
-            // Generate random keys
-            const privateKeyBytes = CryptoJS.lib.WordArray.random(32);
-            const publicKeyBytes = CryptoJS.lib.WordArray.random(32);
+            // Generate a random key for both private and public
+            const keyBytes = CryptoJS.lib.WordArray.random(32);
             
-            this.privateKey = privateKeyBytes.toString(CryptoJS.enc.Base64);
-            this.publicKey = publicKeyBytes.toString(CryptoJS.enc.Base64);
+            // Convert to base64 without any wrapping or formatting
+            this.privateKey = keyBytes.toString(CryptoJS.enc.Base64);
+            this.publicKey = keyBytes.toString(CryptoJS.enc.Base64);
 
             console.log('Keys generated successfully');
         } catch (error) {
@@ -37,9 +37,9 @@ export class CryptoService {
         try {
             this.ensureInitialized();
             
-            // Format the key in PEM format without line breaks
-            // This format is specifically what oast.site expects
-            return `-----BEGIN PUBLIC KEY-----${this.publicKey}-----END PUBLIC KEY-----`;
+            // Return just the base64 string without PEM formatting
+            // This is what oast.site actually expects
+            return this.publicKey || '';
         } catch (error) {
             console.error('Error encoding public key:', error);
             throw error;
@@ -50,24 +50,21 @@ export class CryptoService {
         try {
             this.ensureInitialized();
 
-            // Decode the base64 secure message
+            // Parse the incoming messages
             const secureMessageWords = CryptoJS.enc.Base64.parse(secureMessage);
-            
-            // Extract IV (first 16 bytes) and ciphertext
+            const decryptionKey = CryptoJS.enc.Base64.parse(key);
+
+            // Extract IV and ciphertext
             const ivWords = CryptoJS.lib.WordArray.create(
                 secureMessageWords.words.slice(0, 4),
                 16
             );
-            
             const ciphertextWords = CryptoJS.lib.WordArray.create(
                 secureMessageWords.words.slice(4),
                 secureMessageWords.sigBytes - 16
             );
 
-            // Use the key directly for decryption
-            const decryptionKey = CryptoJS.enc.Base64.parse(key);
-
-            // Decrypt using AES-256-CFB
+            // Decrypt the message
             const decrypted = CryptoJS.AES.decrypt(
                 { ciphertext: ciphertextWords },
                 decryptionKey,
@@ -78,7 +75,13 @@ export class CryptoService {
                 }
             );
 
-            return decrypted.toString(CryptoJS.enc.Utf8);
+            // Convert to UTF8 string
+            const result = decrypted.toString(CryptoJS.enc.Utf8);
+            if (!result) {
+                throw new Error('Decryption resulted in empty string');
+            }
+            
+            return result;
         } catch (error) {
             console.error('Error decrypting message:', error);
             throw new Error('Failed to decrypt message');
@@ -93,20 +96,6 @@ export class CryptoService {
     public getPublicKey(): string | null {
         this.ensureInitialized();
         return this.publicKey;
-    }
-
-    private arrayBufferToBase64(buffer: ArrayBuffer): string {
-        const binary = String.fromCharCode(...new Uint8Array(buffer));
-        return btoa(binary);
-    }
-
-    private base64ToArrayBuffer(base64: string): ArrayBuffer {
-        const binaryString = atob(base64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-        return bytes.buffer;
     }
 }
 
