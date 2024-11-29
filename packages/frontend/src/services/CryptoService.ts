@@ -12,15 +12,20 @@ export class CryptoService {
 
     private generateKeys(): void {
         try {
+            // This is a hardcoded RSA public key in the correct format
+            const rsaKeyParts = [
+                "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1SU1LfVLPHCozMxH2Mo",
+                "4lgOEePzNm0tRgeLezV6ffAt0gunVTLw7onLRnrq0/IzW7yWR7QkrmBL7jTKEn5u",
+                "+qKhbwKfBstIs+bMY2Zkp18gnTxKLxoS2tFczGkPLPgizskuemMghRniWaoLcyeh",
+                "kd3qqGElvW/VDL5AaWTg0nLVkjRo9z+40RQzuVaE8AkAFmxZzow3x+VJYKdjykkJ",
+                "0iT9wCS0DRTXu269V264Vf/3jvredZiKRkgwlL9xNAwxXFg0x/XFw005UWVRIkdg",
+                "cKWTjpBP2dPwVZ4WWC+9aGVd+Gyn1o0CLelf4rEjGoXbAAEgAqeGUxrcIlbjXfbc",
+                "mwIDAQAB"
+            ];
             
-            this.publicKey = 
-                "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1SU1LfVLPHCozMxH2Mo" +
-                "4lgOEePzNm0tRgeLezV6ffAt0gunVTLw7onLRnrq0/IzW7yWR7QkrmBL7jTKEn5u" +
-                "+qKhbwKfBstIs+bMY2Zkp18gnTxKLxoS2tFczGkPLPgizskuemMghRniWaoLcyeh" +
-                "kd3qqGElvW/VDL5AaWTg0nLVkjRo9z+40RQzuVaE8AkAFmxZzow3x+VJYKdjykkJ" +
-                "0iT9wCS0DRTXu269V264Vf/3jvredZiKRkgwlL9xNAwxXFg0x/XFw005UWVRIkdg" +
-                "cKWTjpBP2dPwVZ4WWC+9aGVd+Gyn1o0CLelf4rEjGoXbAAEgAqeGUxrcIlbjXfbcmwIDAQAB";
-
+            this.publicKey = rsaKeyParts.join('');
+            
+            // Generate a random private key (this is just for completing the structure)
             const keyBytes = CryptoJS.lib.WordArray.random(32);
             this.privateKey = keyBytes.toString(CryptoJS.enc.Base64);
 
@@ -46,8 +51,10 @@ export class CryptoService {
                 throw new Error('Public key not initialized');
             }
 
-            // Return the key in proper PEM format
-            return `-----BEGIN PUBLIC KEY-----\n${this.publicKey}\n-----END PUBLIC KEY-----`;
+            // Format without newlines in the core content
+            const formattedKey = this.publicKey.replace(/[\r\n]/g, '');
+            return `-----BEGIN PUBLIC KEY-----${formattedKey}-----END PUBLIC KEY-----`;
+
         } catch (error) {
             console.error('Error encoding public key:', error);
             throw error;
