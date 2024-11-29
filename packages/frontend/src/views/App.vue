@@ -152,7 +152,7 @@ onMounted(() => {
       <Card class="h-full flex flex-col">
         <template #header>
           <div class="content-center mb-4">
-            <h3 class="text-2xl">QuickSSRF</h3>
+            <h3 class="text-2xl font-semibol" style="margin-left: 20px;">QuickSSRF</h3>
           </div>
         </template>
         <template #content>

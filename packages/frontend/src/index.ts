@@ -51,7 +51,8 @@ export const init = (sdk: FrontendSDK) => {
     onEnter: () => {QuickSSRFBtnCount.value = 0;QuickSSRFBtn.setCount(QuickSSRFBtnCount.value);},
   });
 
-  QuickSSRFBtn = sdk.sidebar.registerItem("QuickSSRF", "/quickssrf");
+  QuickSSRFBtn = sdk.sidebar.registerItem("QuickSSRF", "/quickssrf", {icon: 'fas fa-globe'});
   QuickSSRFBtn.setCount(QuickSSRFBtnCount.value);
+
 
 };
