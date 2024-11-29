@@ -12,13 +12,9 @@ export class CryptoService {
 
     private generateKeys(): void {
         try {
-            // Generate a random key for both private and public
             const keyBytes = CryptoJS.lib.WordArray.random(32);
-            
-            // Convert to base64 without any wrapping or formatting
             this.privateKey = keyBytes.toString(CryptoJS.enc.Base64);
             this.publicKey = keyBytes.toString(CryptoJS.enc.Base64);
-
             console.log('Keys generated successfully');
         } catch (error) {
             console.error('Error generating keys:', error);
@@ -37,9 +33,20 @@ export class CryptoService {
         try {
             this.ensureInitialized();
             
-            // Return just the base64 string without PEM formatting
-            // This is what oast.site actually expects
-            return this.publicKey || '';
+            if (!this.publicKey) {
+                throw new Error('Public key not initialized');
+            }
+
+            // Format the key in proper PEM format
+            // Split the base64 into 64-character lines
+            const base64Lines = this.publicKey.match(/.{1,64}/g) || [];
+            const pemKey = [
+                '-----BEGIN PUBLIC KEY-----',
+                ...base64Lines,
+                '-----END PUBLIC KEY-----'
+            ].join('\n');
+
+            return pemKey;
         } catch (error) {
             console.error('Error encoding public key:', error);
             throw error;
@@ -50,11 +57,9 @@ export class CryptoService {
         try {
             this.ensureInitialized();
 
-            // Parse the incoming messages
             const secureMessageWords = CryptoJS.enc.Base64.parse(secureMessage);
             const decryptionKey = CryptoJS.enc.Base64.parse(key);
 
-            // Extract IV and ciphertext
             const ivWords = CryptoJS.lib.WordArray.create(
                 secureMessageWords.words.slice(0, 4),
                 16
@@ -64,7 +69,6 @@ export class CryptoService {
                 secureMessageWords.sigBytes - 16
             );
 
-            // Decrypt the message
             const decrypted = CryptoJS.AES.decrypt(
                 { ciphertext: ciphertextWords },
                 decryptionKey,
@@ -75,7 +79,6 @@ export class CryptoService {
                 }
             );
 
-            // Convert to UTF8 string
             const result = decrypted.toString(CryptoJS.enc.Utf8);
             if (!result) {
                 throw new Error('Decryption resulted in empty string');
