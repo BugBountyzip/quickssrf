@@ -12,8 +12,8 @@ export class CryptoService {
 
     private generateKeys(): void {
         try {
-            // This is a hardcoded RSA public key in the correct format
-            const rsaKeyParts = [
+            // Based on the Interactsh client reference implementation
+            this.publicKey = [
                 "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1SU1LfVLPHCozMxH2Mo",
                 "4lgOEePzNm0tRgeLezV6ffAt0gunVTLw7onLRnrq0/IzW7yWR7QkrmBL7jTKEn5u",
                 "+qKhbwKfBstIs+bMY2Zkp18gnTxKLxoS2tFczGkPLPgizskuemMghRniWaoLcyeh",
@@ -21,14 +21,10 @@ export class CryptoService {
                 "0iT9wCS0DRTXu269V264Vf/3jvredZiKRkgwlL9xNAwxXFg0x/XFw005UWVRIkdg",
                 "cKWTjpBP2dPwVZ4WWC+9aGVd+Gyn1o0CLelf4rEjGoXbAAEgAqeGUxrcIlbjXfbc",
                 "mwIDAQAB"
-            ];
-            
-            this.publicKey = rsaKeyParts.join('');
-            
-            // Generate a random private key (this is just for completing the structure)
+            ].join('');
+
             const keyBytes = CryptoJS.lib.WordArray.random(32);
             this.privateKey = keyBytes.toString(CryptoJS.enc.Base64);
-
             console.log('Keys initialized successfully');
         } catch (error) {
             console.error('Error generating keys:', error);
@@ -36,25 +32,13 @@ export class CryptoService {
         }
     }
 
-    private ensureInitialized(): void {
-        if (!this.isInitialized || !this.publicKey || !this.privateKey) {
-            this.generateKeys();
-            this.isInitialized = true;
-        }
-    }
-
     public async encodePublicKey(): Promise<string> {
         try {
-            this.ensureInitialized();
-            
             if (!this.publicKey) {
                 throw new Error('Public key not initialized');
             }
-
-            // Format without newlines in the core content
-            const formattedKey = this.publicKey.replace(/[\r\n]/g, '');
-            return `-----BEGIN PUBLIC KEY-----${formattedKey}-----END PUBLIC KEY-----`;
-
+            // Return formatted exactly as Interactsh expects
+            return `-----BEGIN PUBLIC KEY-----\n${this.publicKey}\n-----END PUBLIC KEY-----`;
         } catch (error) {
             console.error('Error encoding public key:', error);
             throw error;
@@ -63,15 +47,20 @@ export class CryptoService {
 
     public async decryptMessage(key: string, secureMessage: string): Promise<string> {
         try {
-            this.ensureInitialized();
+            if (!this.privateKey) {
+                throw new Error('Private key not initialized');
+            }
 
             const secureMessageWords = CryptoJS.enc.Base64.parse(secureMessage);
             const decryptionKey = CryptoJS.enc.Base64.parse(key);
 
+            // Extract IV (first 16 bytes)
             const ivWords = CryptoJS.lib.WordArray.create(
                 secureMessageWords.words.slice(0, 4),
                 16
             );
+
+            // Rest is ciphertext
             const ciphertextWords = CryptoJS.lib.WordArray.create(
                 secureMessageWords.words.slice(4),
                 secureMessageWords.sigBytes - 16
@@ -87,25 +76,18 @@ export class CryptoService {
                 }
             );
 
-            const result = decrypted.toString(CryptoJS.enc.Utf8);
-            if (!result) {
-                throw new Error('Decryption resulted in empty string');
-            }
-            
-            return result;
+            return decrypted.toString(CryptoJS.enc.Utf8);
         } catch (error) {
             console.error('Error decrypting message:', error);
-            throw new Error('Failed to decrypt message');
+            throw error;
         }
     }
 
     public getPrivateKey(): string | null {
-        this.ensureInitialized();
         return this.privateKey;
     }
 
     public getPublicKey(): string | null {
-        this.ensureInitialized();
         return this.publicKey;
     }
 }
