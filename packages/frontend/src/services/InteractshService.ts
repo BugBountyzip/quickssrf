@@ -35,61 +35,109 @@ export const useClientService = () => {
     const secretKey: Ref<string | null> = ref(null);
     const serverURL: Ref<URL | null> = ref(null);
     const token: Ref<string | null> = ref(null);
-    let httpClient: AxiosInstance = axios.create({ timeout: 10000 });
+    let httpClient: AxiosInstance = axios.create({
+        timeout: 10000,
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+    });
     const quitPollingFlag: Ref<boolean> = ref(false);
-    let correlationIdNonceLength = 13; // default value
+    let correlationIdNonceLength = 13;
     let interactionCallback: ((interaction: any) => void) | null = null;
     let dataHandler: ((interaction: any) => any) | null = null;
-
-    // Polling interval in milliseconds (default 5000ms)
     const pollingInterval: Ref<number> = ref(5000);
 
-    // Initialize client with options
+    const generateRandomID = (length: number): string => {
+        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        return Array.from(
+            { length }, 
+            () => chars.charAt(Math.floor(Math.random() * chars.length))
+        ).join('');
+    };
+
+    const performRegistration = async (payload: any): Promise<boolean> => {
+        if (!serverURL.value) throw new Error('Server URL is not defined');
+        
+        try {
+            const url = new URL('/register', serverURL.value.toString()).toString();
+            console.log('Registration URL:', url);
+            console.log('Registration payload:', payload);
+
+            const response = await httpClient.post(url, JSON.stringify(payload), {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (response.status === 200) {
+                state.value = State.Idle;
+                console.log('Registration successful:', response.data);
+                return true;
+            }
+            throw new Error(`Registration failed with status ${response.status}`);
+        } catch (error) {
+            console.error('Registration error:', error);
+            throw error;
+        }
+    };
+
     const initialize = async (
         options: Options,
         interactionCallbackParam?: (interaction: any) => void,
         dataHandlerParam?: (interaction: any) => any
     ) => {
-        httpClient = options.httpClient || axios.create({ timeout: 10000 });
-        token.value = options.token || uuidv4();
-        correlationID.value =
-            options.sessionInfo?.correlationID ||
-            generateRandomID(options.correlationIdLength || 20);
-        secretKey.value =
-            options.sessionInfo?.secretKey ||
-            generateRandomID(options.correlationIdNonceLength || 13);
-        serverURL.value = new URL(options.serverURL || 'https://oast.site');
+        try {
+            // Basic setup
+            httpClient = options.httpClient || axios.create({
+                timeout: 10000,
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
 
-        correlationIdNonceLength = options.correlationIdNonceLength || 13;
+            // Generate IDs and set URLs
+            correlationID.value = generateRandomID(options.correlationIdLength || 20);
+            secretKey.value = generateRandomID(options.correlationIdNonceLength || 13);
+            serverURL.value = new URL(options.serverURL || 'https://oast.site');
+            token.value = options.token || uuidv4();
+            correlationIdNonceLength = options.correlationIdNonceLength || 13;
 
-        if (interactionCallbackParam) {
-            interactionCallback = interactionCallbackParam;
-        }
+            // Set callbacks
+            if (interactionCallbackParam) interactionCallback = interactionCallbackParam;
+            if (dataHandlerParam) dataHandler = dataHandlerParam;
 
-        if (dataHandlerParam) {
-            dataHandler = dataHandlerParam;
-        }
+            // Handle session info if provided
+            if (options.sessionInfo) {
+                const session = options.sessionInfo;
+                token.value = session.token;
+                serverURL.value = new URL(session.serverURL);
+            }
 
-        if (options.sessionInfo) {
-            // Load session details
-            const session = options.sessionInfo;
-            token.value = session.token;
-            serverURL.value = new URL(session.serverURL);
-        }
+            // Register with server
+            const publicKey = await cryptoService.encodePublicKey();
+            const success = await performRegistration({
+                'public-key': publicKey,
+                'secret-key': secretKey.value,
+                'correlation-id': correlationID.value
+            });
 
-        // Generate publicKey and perform registration
-        const publicKey = await cryptoService.encodePublicKey();
-        const payload = {
-            'public-key': publicKey,
-            'secret-key': secretKey.value,
-            'correlation-id': correlationID.value,
-        };
-        await performRegistration(payload);
+            if (!success) {
+                throw new Error('Failed to register with server');
+            }
 
-        // Optionally start polling
-        if (options.keepAliveInterval) {
-            pollingInterval.value = options.keepAliveInterval;
-            startPolling(interactionCallback || defaultInteractionHandler);
+            // Setup polling if interval provided
+            if (options.keepAliveInterval) {
+                pollingInterval.value = options.keepAliveInterval;
+                startPolling(interactionCallback || defaultInteractionHandler);
+            }
+
+            return success;
+        } catch (error) {
+            console.error('Initialization error:', error);
+            throw error;
         }
     };
 
@@ -97,69 +145,42 @@ export const useClientService = () => {
         console.log('Received interaction:', interaction);
     };
 
-    // Perform registration
-    const performRegistration = async (payload: object) => {
-        if (!serverURL.value) throw new Error('Server URL is not defined');
-        const url = new URL('/register', serverURL.value.toString()).toString();
-        try {
-            const response = await httpClient.post(url, payload, {
-                headers: { 'Content-Type': 'application/json' },
-            });
-            if (response.status === 200) {
-                state.value = State.Idle;
-                console.log(response.data);
-            } else {
-                throw new Error('Registration failed');
-            }
-        } catch (error) {
-            console.error('Registration error:', error);
-        }
-    };
-
-    // Update getInteractions to include dataHandler
     const getInteractions = async (
         callback: (interaction: any) => void,
         dataHandler?: (interaction: any) => any
     ) => {
+        if (!correlationID.value || !secretKey.value || !serverURL.value) {
+            throw new Error('Client not properly initialized');
+        }
+
         try {
             const url = new URL(
                 `/poll?id=${correlationID.value}&secret=${secretKey.value}`,
-                serverURL.value?.toString() || ''
+                serverURL.value.toString()
             ).toString();
+
             const headers: any = {};
-            if (token.value) {
-                headers['Authorization'] = token.value;
-            }
+            if (token.value) headers['Authorization'] = token.value;
 
             const response = await httpClient.get(url, { headers });
-            if (response.status !== 200) {
-                if (response.status === 401) {
-                    throw new Error("Couldn't authenticate to the server");
-                }
-                throw new Error(`Could not poll interactions: ${response.data}`);
-            }
-
-            const data = response.data;
-            if (data.data && Array.isArray(data.data)) {
-                for (const item of data.data) {
-                    const plaintext = await cryptoService.decryptMessage(data.aes_key, item);
-                    let interaction = JSON.parse(plaintext.toString());
-                    if (dataHandler) {
-                        interaction = dataHandler(interaction);
-                    }
+            
+            if (response.status === 200 && response.data?.data) {
+                for (const item of response.data.data) {
+                    const plaintext = await cryptoService.decryptMessage(response.data.aes_key, item);
+                    let interaction = JSON.parse(plaintext);
+                    if (dataHandler) interaction = dataHandler(interaction);
                     callback(interaction);
                 }
             }
         } catch (err) {
-            console.error(`Error polling interactions: ${err}`);
+            console.error('Error polling interactions:', err);
+            throw err;
         }
     };
 
-    // Start polling interactions
     const startPolling = (callback: (interaction: any) => void) => {
-        if (state.value === State.Polling) {
-            throw new Error('Client is already polling');
-        }
+        if (state.value === State.Polling) return;
+        
         quitPollingFlag.value = false;
         state.value = State.Polling;
 
@@ -170,120 +191,54 @@ export const useClientService = () => {
                 } catch (err) {
                     console.error('Polling error:', err);
                 }
-                await new Promise((resolve) => setTimeout(resolve, pollingInterval.value));
+                await new Promise(resolve => setTimeout(resolve, pollingInterval.value));
             }
         };
+
         pollingLoop();
     };
 
-    // Force immediate polling
+    const generateUrl = (): string => {
+        if (state.value === State.Closed || !correlationID.value || !serverURL.value) {
+            throw new Error('Cannot generate URL: client is closed or not initialized');
+        }
+
+        const randomData = generateRandomID(correlationIdNonceLength);
+        return `${correlationID.value}${randomData}.${serverURL.value.host}`;
+    };
+
     const poll = async () => {
         if (state.value !== State.Polling) {
             throw new Error('Client is not polling');
         }
-        try {
-            await getInteractions(interactionCallback || defaultInteractionHandler, dataHandler);
-        } catch (err) {
-            console.error('Polling error:', err);
-        }
+        await getInteractions(interactionCallback || defaultInteractionHandler, dataHandler);
     };
 
-    // Stop polling interactions
     const stopPolling = () => {
-        if (state.value !== State.Polling) {
-            throw new Error('Client is not polling');
-        }
+        if (state.value !== State.Polling) return;
         quitPollingFlag.value = true;
         state.value = State.Idle;
     };
 
-    // Set polling interval in seconds
-    const setRefreshTimeSecond = (seconds: number) => {
-        if (seconds < 5 || seconds > 3600) {
-            throw new Error('The polling interval must be between 5 and 3600 seconds');
-        }
-        pollingInterval.value = seconds * 1000; // Convert seconds to milliseconds
-    };
-
-    // Close the client
     const close = async () => {
         if (state.value === State.Polling) {
-            throw new Error('Client should stop polling before closing');
+            throw new Error('Stop polling before closing');
         }
-        if (state.value === State.Closed) {
-            throw new Error('Client is already closed');
-        }
+        if (state.value === State.Closed) return;
 
-        const deregisterRequest = {
-            correlationID: correlationID.value,
-            secretKey: secretKey.value,
-        };
-        const url = new URL('/deregister', serverURL.value?.toString() || '').toString();
-        const headers: any = { 'Content-Type': 'application/json' };
-        if (token.value) {
-            headers['Authorization'] = token.value;
-        }
         try {
-            const response = await httpClient.post(url, deregisterRequest, { headers });
-            if (response.status !== 200) {
-                throw new Error(`Could not deregister from server: ${response.data}`);
+            if (serverURL.value && correlationID.value && secretKey.value) {
+                const url = new URL('/deregister', serverURL.value.toString()).toString();
+                await httpClient.post(url, {
+                    correlationID: correlationID.value,
+                    secretKey: secretKey.value
+                });
             }
             state.value = State.Closed;
         } catch (err) {
+            console.error('Error closing client:', err);
             throw err;
         }
-    };
-
-    // Start the client (initialize and start polling)
-    const start = async (
-        options: Options,
-        interactionCallbackParam?: (interaction: any) => void,
-        dataHandlerParam?: (interaction: any) => any
-    ) => {
-        await initialize(options, interactionCallbackParam, dataHandlerParam);
-    };
-
-    // Stop the client (stop polling and close)
-    const stop = async () => {
-        if (state.value === State.Polling) {
-            stopPolling();
-        }
-        await close();
-    };
-
-    // Save session data (front-end friendly, JSON export)
-    const saveSession = () => {
-        if (!serverURL.value || !correlationID.value || !secretKey.value) {
-            throw new Error('Session data is incomplete');
-        }
-        const session: SessionInfo = {
-            serverURL: serverURL.value.toString(),
-            token: token.value || '',
-            privateKey: cryptoService.getPrivateKey(),
-            correlationID: correlationID.value,
-            secretKey: secretKey.value,
-        };
-        return JSON.stringify(session, null, 2); // Return JSON string for download or storage
-    };
-
-    // Generate a random ID
-    const generateRandomID = (length: number): string => {
-        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-        let id = '';
-        for (let i = 0; i < length; i++) {
-            id += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        return id;
-    };
-
-    // Generate a new interaction URL
-    const generateUrl = (): string => {
-        if (state.value === State.Closed || !correlationID.value || !serverURL.value) {
-            return '';
-        }
-
-        const randomData = generateRandomID(correlationIdNonceLength);
-        return `https://${correlationID.value}${randomData}.${serverURL.value.host}`;
     };
 
     return {
@@ -296,12 +251,10 @@ export const useClientService = () => {
         performRegistration,
         startPolling,
         stopPolling,
-        setRefreshTimeSecond,
-        start,
-        stop,
+        start: initialize,
+        stop: close,
         close,
-        saveSession,
         generateUrl,
-        poll, // Expose the poll method
+        poll
     };
 };
