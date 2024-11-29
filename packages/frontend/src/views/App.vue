@@ -5,11 +5,10 @@ import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import { useSDK } from "@/plugins/sdk";
 import { ref, onMounted, computed } from "vue";
-import {useClientService} from "@/services/InteractshService";
-import {QuickSSRFBtn, QuickSSRFBtnCount} from "@/index";
+import { useClientService } from "@/services/InteractshService";
+import { QuickSSRFBtn, QuickSSRFBtnCount } from "@/index";
 import { v4 as uuidv4 } from "uuid";
 import { useClipboard } from "@vueuse/core";
-
 
 const sdk = useSDK();
 const responseEditorRef = ref();
@@ -19,8 +18,8 @@ const response = ref();
 const clipboard = useClipboard();
 let clientService: any = null;
 
-// Source de données réactive
-const sourceData = ref<Response[]>([]); // Le tableau stockant les données
+// Reactive data source
+const sourceData = ref<Response[]>([]);
 
 const parseDnsResponse = (json: any): Response => {
   return {
@@ -35,26 +34,22 @@ const parseDnsResponse = (json: any): Response => {
   };
 };
 
-
-// Ajouter les données de `parseDnsResponse` à la source
 const addToSourceData = (response: Response) => {
   QuickSSRFBtnCount.value += 1;
   QuickSSRFBtn.setCount(QuickSSRFBtnCount.value);
   sourceData.value.push(response);
 };
 
-// Mise à jour des données du tableau en temps réel
 const tableData = computed(() =>
-    sourceData.value.map((item, index) => ({
-      req: index + 1,
-      dateTime: new Date(item.timestamp).toISOString(),
-      type: item.protocol.toUpperCase(),
-      payload: item.fullId,
-      source: item.remoteAddress,
-    }))
+  sourceData.value.map((item, index) => ({
+    req: index + 1,
+    dateTime: new Date(item.timestamp).toISOString(),
+    type: item.protocol.toUpperCase(),
+    payload: item.fullId,
+    source: item.remoteAddress,
+  }))
 );
 
-// Gestion de la sélection de ligne
 const selectedRow = ref<Response | null>(null);
 
 const onRowClick = (event: { data: { req: number } }) => {
@@ -65,117 +60,159 @@ const onRowClick = (event: { data: { req: number } }) => {
   onSelectedData(selectedRow.value);
 };
 
-// Méthode appelée lors de la sélection d’une ligne
 const onSelectedData = (selectedData: Response | null) => {
-  responseEditorRef.value.getEditorView().dispatch({
-        changes: {
-          from: 0,
-          to: responseEditorRef.value.getEditorView().state.doc.length,
-          insert: selectedData?.rawResponse,
-        },
-      });
+  if (!selectedData) return;
 
-  requestEditorRef.value.getEditorView().dispatch({
-        changes: {
-          from: 0,
-          to: requestEditorRef.value.getEditorView().state.doc.length,
-          insert: selectedData?.rawRequest,
-        },
-      });
+  try {
+    responseEditorRef.value?.getEditorView().dispatch({
+      changes: {
+        from: 0,
+        to: responseEditorRef.value.getEditorView().state.doc.length,
+        insert: selectedData.rawResponse || '',
+      },
+    });
 
-  console.log("Selected Data:", selectedData);
+    requestEditorRef.value?.getEditorView().dispatch({
+      changes: {
+        from: 0,
+        to: requestEditorRef.value.getEditorView().state.doc.length,
+        insert: selectedData.rawRequest || '',
+      },
+    });
+  } catch (error) {
+    console.error('Error updating editors:', error);
+    sdk.window.showToast("Failed to update editors", { variant: "error" });
+  }
 };
 
-// Lancer le service et écouter les interactions
 const onGenerateClick = async () => {
-  if (clientService === null) {
-    clientService = useClientService();
+  try {
+    if (clientService === null) {
+      clientService = useClientService();
 
-    await clientService.start(
+      await clientService.start(
         {
           serverURL: "https://oast.site",
           token: uuidv4(),
           keepAliveInterval: 30000,
         },
-        (interaction: any) => {
-          console.log("Received interaction:", interaction);
-          const resp: Response = parseDnsResponse(interaction);
-          addToSourceData(resp); // Ajouter à la source de données
+        async (interaction: any) => {
+          try {
+            console.log("Received interaction:", interaction);
+            const resp: Response = parseDnsResponse(interaction);
+            addToSourceData(resp);
+          } catch (error) {
+            console.error('Error processing interaction:', error);
+          }
         }
-    );
-    const url = clientService.generateUrl()
-    console.log(url);
-    await clipboard.copy(url);
-    sdk.window.showToast("Copy to clipboard.", {variant: "success"})
+      );
+
+      const url = clientService.generateUrl();
+      console.log('Generated URL:', url);
+
+      // Ensure URL has protocol
+      const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+      await clipboard.copy(fullUrl);
+      sdk.window.showToast("URL copied to clipboard", { variant: "success" });
+    } else {
+      const url = clientService.generateUrl();
+      const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+      await clipboard.copy(fullUrl);
+      sdk.window.showToast("URL copied to clipboard", { variant: "success" });
+    }
+  } catch (error) {
+    console.error('Error generating link:', error);
+    sdk.window.showToast("Failed to generate link", { variant: "error" });
   }
 };
 
 const onManualPooling = async () => {
-  clientService.poll();
+  try {
+    if (!clientService) {
+      sdk.window.showToast("Client service not initialized", { variant: "error" });
+      return;
+    }
+    await clientService.poll();
+  } catch (error) {
+    console.error('Polling error:', error);
+    sdk.window.showToast("Polling failed", { variant: "error" });
+  }
 };
-const onClearData = async () => {
-  sourceData.value = [];
-  responseEditorRef.value.getEditorView().dispatch({
-    changes: {
-      from: 0,
-      to: responseEditorRef.value.getEditorView().state.doc.length,
-      insert: '',
-    },
-  });
 
-  requestEditorRef.value.getEditorView().dispatch({
-    changes: {
-      from: 0,
-      to: requestEditorRef.value.getEditorView().state.doc.length,
-      insert: '',
-    },
-  });
+const onClearData = async () => {
+  try {
+    sourceData.value = [];
+    QuickSSRFBtnCount.value = 0;
+    QuickSSRFBtn.setCount(QuickSSRFBtnCount.value);
+
+    responseEditorRef.value?.getEditorView().dispatch({
+      changes: {
+        from: 0,
+        to: responseEditorRef.value.getEditorView().state.doc.length,
+        insert: '',
+      },
+    });
+
+    requestEditorRef.value?.getEditorView().dispatch({
+      changes: {
+        from: 0,
+        to: requestEditorRef.value.getEditorView().state.doc.length,
+        insert: '',
+      },
+    });
+
+    sdk.window.showToast("Data cleared", { variant: "success" });
+  } catch (error) {
+    console.error('Error clearing data:', error);
+    sdk.window.showToast("Failed to clear data", { variant: "error" });
+  }
 };
 
 onMounted(() => {
-  const responseEditor = sdk.ui.httpResponseEditor();
-  const requestEditor = sdk.ui.httpRequestEditor();
+  try {
+    const responseEditor = sdk.ui.httpResponseEditor();
+    const requestEditor = sdk.ui.httpRequestEditor();
 
-  response.value.appendChild(responseEditor.getElement());
-  request.value.appendChild(requestEditor.getElement());
+    response.value?.appendChild(responseEditor.getElement());
+    request.value?.appendChild(requestEditor.getElement());
 
-  responseEditorRef.value = responseEditor;
-  requestEditorRef.value = requestEditor;
+    responseEditorRef.value = responseEditor;
+    requestEditorRef.value = requestEditor;
+  } catch (error) {
+    console.error('Error mounting editors:', error);
+    sdk.window.showToast("Failed to initialize editors", { variant: "error" });
+  }
 });
 </script>
 
-
 <template>
   <div class="h-full flex flex-col gap-4">
-    <!-- Top Pane -->
     <div class="w-full flex-1">
       <Card class="h-full flex flex-col">
         <template #header>
           <div class="content-center mb-4">
-            <h3 class="text-2xl font-semibol" style="margin-left: 20px;">QuickSSRF</h3>
+            <h3 class="text-2xl font-semibold" style="margin-left: 20px;">QuickSSRF</h3>
           </div>
         </template>
         <template #content>
           <div class="flex flex-col h-full">
-            <!-- Actions Section -->
             <div class="flex items-center gap-4 mb-4">
               <h2 class="text-lg font-semibold">Actions</h2>
               <Button label="Generate Link" style="width: 200px" @click="onGenerateClick" />
-              <Button label="Pooling" style="width: 200px" @click="onManualPooling" />
+              <Button label="Polling" style="width: 200px" @click="onManualPooling" />
               <Button label="Clear Data" style="width: 200px" @click="onClearData" />
             </div>
-            <!-- Request Logs Section -->
             <div class="flex-1 overflow-auto max-h-[300px]">
               <h3 class="text-lg font-semibold mb-2">Request Logs</h3>
               <DataTable
-                  :value="tableData"
-                  v-model:selection="selectedRow"
-                  selectionMode="single"
-                  dataKey="req"
-                  scrollable
-                  scrollHeight="100%"
-                  class="w-full"
-                  @row-click="onRowClick"
+                :value="tableData"
+                v-model:selection="selectedRow"
+                selectionMode="single"
+                dataKey="req"
+                scrollable
+                scrollHeight="100%"
+                class="w-full"
+                @row-click="onRowClick"
               >
                 <Column field="req" header="Req #" sortable />
                 <Column field="dateTime" header="Date-Time" sortable />
@@ -189,11 +226,8 @@ onMounted(() => {
       </Card>
     </div>
 
-    <!-- Horizontal Split Below -->
     <div class="w-full flex flex-1 gap-4">
-      <!-- Request Component -->
       <div class="h-full w-1/2" ref="request"></div>
-      <!-- Response Component -->
       <div class="h-full w-1/2" ref="response"></div>
     </div>
   </div>
